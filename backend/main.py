@@ -24,6 +24,7 @@ pool.json；缺失时回退 config.SECTORS）。接口形状方向无关：/api/
 """
 import asyncio
 import json
+import os
 import re
 import time
 from collections import deque
@@ -32,10 +33,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import MOMENTUM, POOL, POOL_CACHE_FILE, POLL_INTERVAL, SECTORS, TREND_CACHE_TTL
+from config import (CONGESTION, CONGESTION_LOG_DIR, MOMENTUM, POOL,
+                    POOL_CACHE_FILE, POLL_INTERVAL, SECTORS, TREND_CACHE_TTL)
 from fetcher import (fetch_sector_flow, fetch_sector_flow_history,
                      fetch_sector_trend, fetch_stock_quotes)
-from momentum import compute_momentum, in_trading_session
+from congestion import compute_congestion
+from momentum import compute_momentum, in_trading_session, slope_per_min
 
 # 内存缓存：所有对东财的请求都收敛到这里，前端只读缓存
 _cache = {
@@ -49,6 +52,12 @@ _cache = {
 # 启动回填的分钟点与实时 5 秒采样点同口径（日内累计，见 fetch_sector_flow_history）
 HISTORY_MAXLEN = 400  # 5 秒采样约 33 分钟，覆盖 15 分钟窗口有余量
 _histories = {}
+
+# 拥挤度 V2：小单净占比（占成交额%）历史缓冲，算散户涌入斜率用
+_small_histories = {}
+
+# 观察日志节流
+_last_cong_log = 0.0
 
 # 自下而上动量池（rebuild_pool.py 生成 pool.json）；读取失败时回退固定 SECTORS
 _pool_sectors = []
@@ -76,8 +85,17 @@ def _load_pool():
     print(f"[pool] 回退固定 SECTORS（{len(SECTORS)} 板块）")
 
 
+def _small_ratio(s):
+    """小单净占比（占成交额%）：散户追高程度的核心观测量（拥挤度 V2）。"""
+    small, amount = s.get("small_net_inflow"), s.get("amount")
+    if small is None or not amount:
+        return None
+    return small / amount * 100
+
+
 def _append_history(sectors):
-    """每次成功拉取后写入一份实时主力净流入快照（动量斜率计算的数据源）。
+    """每次成功拉取后写入一份实时主力净流入快照（动量斜率计算的数据源），
+    以及小单净占比快照（拥挤度 V2 的散户涌入斜率）。
     盘外时段累计值冻结（重复上一交易日收盘数），采样点不入库，
     否则窗口锚点会漂到无数据的空档。"""
     now = time.time()
@@ -91,6 +109,43 @@ def _append_history(sectors):
         if buf and buf[-1][0] >= now:  # 防御时钟回拨/重复写入
             continue
         buf.append((now, inflow))
+        ratio = _small_ratio(s)
+        if ratio is not None:
+            sbuf = _small_histories.setdefault(s["code"], deque(maxlen=HISTORY_MAXLEN))
+            if not sbuf or sbuf[-1][0] < now:
+                sbuf.append((now, ratio))
+
+
+def _maybe_log_congestion(sectors):
+    """观察日志：每 log_interval 秒为每个板块写一行 jsonl，
+    复盘用——"位置标了 70% 的板块，T+1/T+3 是不是真退了"。
+    失败只打印不阻塞主流程。"""
+    global _last_cong_log
+    now = time.time()
+    if now - _last_cong_log < CONGESTION["log_interval"]:
+        return
+    _last_cong_log = now
+    try:
+        mom = compute_momentum(sectors, _histories, MOMENTUM)
+        os.makedirs(CONGESTION_LOG_DIR, exist_ok=True)
+        path = os.path.join(
+            CONGESTION_LOG_DIR, "congestion_" + time.strftime("%Y%m%d") + ".jsonl")
+        with open(path, "a", encoding="utf-8") as f:
+            for s in sectors:
+                ratio = _small_ratio(s)
+                cong = compute_congestion(ratio, s.get("up_count"),
+                                          s.get("down_count"), s.get("chg_60d"),
+                                          s.get("chg_ytd"), CONGESTION)
+                m = mom.get(s["code"]) or {}
+                f.write(json.dumps({
+                    "ts": int(now), "code": s["code"], "name": s.get("display"),
+                    "position": cong["position"], "parts": cong["parts"],
+                    "small_pct": None if ratio is None else round(ratio, 3),
+                    "v5": m.get("v5"), "score": m.get("score"),
+                    "chg": s.get("change_pct"),
+                }, ensure_ascii=False) + "\n")
+    except Exception as err:
+        print(f"[congestion-log] 写入失败: {err}")
 
 
 async def _do_refresh():
@@ -103,6 +158,7 @@ async def _do_refresh():
         _cache["ok"] = True
         _cache["last_error"] = None
         _append_history(sectors)
+        _maybe_log_congestion(sectors)
     except Exception as err:  # 网络/限流/解析失败：保留旧数据，记录状态
         _cache["ok"] = False
         _cache["last_error"] = str(err)
@@ -204,6 +260,14 @@ def get_sectors():
         item["momentum"] = mom.get(s["code"])
         # 池内成分龙头股代码（详情页展示用；固定 SECTORS 回退时为空）
         item["members"] = members_of.get(s["code"]) or []
+        # 拥挤度 V2：位置徽标（不参与排序）+ 分量明细 + 小单涌入斜率（观察量）
+        ratio = _small_ratio(s)
+        cong = compute_congestion(ratio, s.get("up_count"), s.get("down_count"),
+                                  s.get("chg_60d"), s.get("chg_ytd"), CONGESTION)
+        cong["small_slope"] = slope_per_min(
+            list(_small_histories.get(s["code"]) or []),
+            CONGESTION["small_slope_window_min"])
+        item["congestion"] = cong
         items.append(item)
 
     def _score(it):

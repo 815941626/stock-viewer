@@ -12,6 +12,9 @@
         <span v-if="m" :class="upDownClass(m.v15)">v15 {{ fmtSlope(m.v15) }}</span>
         <span v-if="m && m.accel === true" class="acc-up">↑ 加速</span>
         <span v-else-if="m && m.accel === false" class="acc-dn">↓ 减速</span>
+        <span v-if="congPos != null" class="chip" :class="congClass" :title="congTip">
+          拥挤 {{ congPos }}%
+        </span>
       </div>
     </header>
 
@@ -39,6 +42,21 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const m = computed(() => props.sector.momentum || null)
+
+// 拥挤度 V2 徽标（观察期，不参与任何排序）
+const congPos = computed(() => props.sector.congestion?.position ?? null)
+const congClass = computed(() => {
+  const p = congPos.value
+  if (p == null) return ''
+  if (p < 35) return 'c-low'
+  if (p < 65) return 'c-mid'
+  return 'c-high'
+})
+const congTip = computed(() => {
+  const c = props.sector.congestion || {}
+  const p = c.parts || {}
+  return `拥挤位置 ${c.position}%（小单 ${p.small ?? '-'} / 铺开 ${p.breadth ?? '-'} / 抬高 ${p.extension ?? '-'})`
+})
 
 const TREND_POLL_MS = 30000
 const QUOTE_POLL_MS = 5000
@@ -116,6 +134,13 @@ const fmtSlope = v => (v == null ? '-' : (v >= 0 ? '+' : '') + v.toFixed(2))
 .stats .dim { color: #7b84a3; }
 .acc-up { color: #ff4d4f; font-weight: bold; }
 .acc-dn { color: #00b578; }
+.chip {
+  padding: 1px 9px; border-radius: 10px; font-size: 12px;
+  border: 1px solid transparent; cursor: help;
+}
+.c-low { color: #00b578; border-color: rgba(0, 181, 120, 0.45); }
+.c-mid { color: #f5b041; border-color: rgba(245, 176, 65, 0.45); }
+.c-high { color: #ff4d4f; border-color: rgba(255, 77, 79, 0.5); }
 .panel {
   max-width: 1200px; margin: 0 auto 16px;
   background: rgba(255, 255, 255, 0.03);

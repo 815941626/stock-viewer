@@ -5,7 +5,7 @@
       <p class="bd-sub">
         排序 = v5 短期资金流斜率（截面归一化） ·
         <span class="acc-up">↑</span> 加速 = v5 &gt; v15 ·
-        悬浮预览，点击行进入板块详情
+        拥挤度为徽标不参与排序（观察期）· 点击行进详情
       </p>
     </div>
     <div v-if="!sectors.length" class="bd-empty">加载中…</div>
@@ -18,7 +18,7 @@
           <th>v5短期(亿/分)</th>
           <th>v15长期(亿/分)</th>
           <th>净流入(亿)</th>
-          <th>成交额(亿)</th>
+          <th>拥挤度</th>
         </tr>
       </thead>
       <tbody>
@@ -39,7 +39,9 @@
           <td :class="upDownClass(v5(s))">{{ fmtSlope(v5(s)) }}</td>
           <td :class="upDownClass(v15(s))">{{ fmtSlope(v15(s)) }}</td>
           <td :class="upDownClass(s.main_net_inflow)">{{ fmtYi(s.main_net_inflow) }}</td>
-          <td>{{ fmtYi(s.amount) }}</td>
+          <td>
+            <span class="chip" :class="congClass(s)" :title="congTip(s)">{{ congText(s) }}</span>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -78,6 +80,25 @@ const ranked = computed(() => {
 
 // 斜率展示：带符号两位小数（亿元/分钟）
 const fmtSlope = v => (v == null ? '-' : (v >= 0 ? '+' : '') + v.toFixed(2))
+
+// 拥挤度徽标（V2 观察期：只提示不干预排序）
+const cong = s => s.congestion || {}
+const congText = s => (cong(s).position == null ? '-' : cong(s).position + '%')
+const congClass = s => {
+  const p = cong(s).position
+  if (p == null) return 'c-none'
+  if (p < 35) return 'c-low'
+  if (p < 65) return 'c-mid'
+  return 'c-high'
+}
+const congTip = s => {
+  const c = cong(s)
+  if (c.position == null) return '拥挤度数据不足'
+  const p = c.parts || {}
+  return `拥挤位置 ${c.position}%\n分量：小单 ${p.small ?? '-'} / 铺开 ${p.breadth ?? '-'} / 抬高 ${p.extension ?? '-'}\n` +
+    `小单净占比 ${c.small_net_pct == null ? '-' : c.small_net_pct.toFixed(2) + '%'} · ` +
+    `上涨占比 ${c.breadth_pct == null ? '-' : c.breadth_pct + '%'}`
+}
 </script>
 
 <style scoped>
@@ -105,4 +126,12 @@ tbody tr.dead td { color: #5a627e; }
 }
 .up { color: #ff4d4f; }
 .down { color: #00b578; }
+.chip {
+  display: inline-block; padding: 1px 9px; border-radius: 10px;
+  font-size: 12px; border: 1px solid transparent; cursor: help;
+}
+.c-low { color: #00b578; border-color: rgba(0, 181, 120, 0.45); }
+.c-mid { color: #f5b041; border-color: rgba(245, 176, 65, 0.45); }
+.c-high { color: #ff4d4f; border-color: rgba(255, 77, 79, 0.5); }
+.c-none { color: #5a627e; }
 </style>

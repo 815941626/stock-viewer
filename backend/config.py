@@ -164,6 +164,30 @@ POOL = {
 # 动量池缓存文件（rebuild_pool.py 生成，main.py 启动读取；缺失时回退固定 SECTORS）
 POOL_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pool.json")
 
+# 拥挤度 V2.0 参数（2026-08-09 设计共识：位置做徽标，不参与排序；先观察后谈降权）
+# 三分量对应用户定义"散户涌入 + 价格铺开抬高"：
+#   small    = 小单净占比位置（小单≈散户；吸筹期为负，散户追高转正——核心前兆）
+#   breadth  = 铺开度（上涨家数占比；启动期窄幅领涨，散户进场后全线铺开）
+#   extension= 抬高度（已涨掉的空间，取 max(60日涨幅, 年初至今)）
+# 成交额过热分量暂缺（板块日K源在本IP不可用），接口可用后补上（权重结构已预留）
+# 映射锚点均为初值猜测，靠观察日志（logs/congestion_*.jsonl）积累两三周后校准
+CONGESTION = {
+    "weights": {"small": 0.45, "breadth": 0.30, "extension": 0.25},
+    # 小单净占比（占成交额%）锚点：≤-1 吸筹 / 0 中性 / +1 追高 / +2 极端
+    "small_anchors": [(-1.0, 10.0), (0.0, 40.0), (1.0, 75.0), (2.0, 100.0)],
+    # 上涨家数占比锚点：0.5 分化 / 0.7 扩散 / 0.85 普涨 / 0.95 全铺开
+    "breadth_anchors": [(0.5, 20.0), (0.7, 50.0), (0.85, 80.0), (0.95, 100.0)],
+    # 抬高度：涨幅达到该值（%）记满 100
+    "extension_full_pct": 60.0,
+    # 小单占比斜率窗口（分钟）：观察输出用（散户涌入加速度），暂不进位置公式
+    "small_slope_window_min": 15,
+    # 观察日志写入间隔（秒）
+    "log_interval": 300,
+}
+
+# 拥挤度观察日志目录（每日一个 jsonl，复盘"位置标了之后板块怎么走"）
+CONGESTION_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+
 # 轮询间隔（秒），规格要求每 5 秒刷新一次
 POLL_INTERVAL = 5
 

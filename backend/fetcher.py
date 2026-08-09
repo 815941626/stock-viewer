@@ -96,6 +96,11 @@ def _normalize(item):
         "amount": _to_float(item.get("f6")),            # 成交额（元）
         "main_net_inflow": _to_float(item.get("f62")),  # 主力净流入（元）
         "main_net_pct": _to_float(item.get("f184")),    # 主力净占比 %
+        "small_net_inflow": _to_float(item.get("f84")),  # 小单净流入（散户，拥挤度V2）
+        "up_count": _to_float(item.get("f104")),         # 上涨家数（铺开度）
+        "down_count": _to_float(item.get("f105")),       # 下跌家数
+        "chg_60d": _to_float(item.get("f24")),           # 60日涨幅（抬高度）
+        "chg_ytd": _to_float(item.get("f25")),           # 年初至今涨幅（抬高度）
         "_super_big": _to_float(item.get("f66")),       # 超大单净流入（校验用）
         "_big": _to_float(item.get("f72")),             # 大单净流入（校验用）
     }
@@ -117,7 +122,8 @@ def fetch_sector_flow(sectors=None, retries=2):
         "invt": 2,
         "np": 1,
         "ut": "b2884a393a59ad64002292a3e90d46a5",   # 东财公开接口通用 token
-        "fields": "f12,f14,f2,f3,f6,f62,f184,f66,f72",
+        # 拥挤度 V2 数据源并入同一请求（f84小单/f104-105涨跌家数/f24-25区间涨幅）
+        "fields": "f12,f14,f2,f3,f6,f24,f25,f62,f66,f72,f84,f104,f105,f184",
         "secids": secids,
     }
 
@@ -142,6 +148,9 @@ def fetch_sector_flow(sectors=None, retries=2):
                                        "name": cfg.get("em_name") or cfg["display"],
                                        "change_pct": None, "amount": None,
                                        "main_net_inflow": None, "main_net_pct": None,
+                                       "small_net_inflow": None, "up_count": None,
+                                       "down_count": None, "chg_60d": None,
+                                       "chg_ytd": None,
                                        "_super_big": None, "_big": None,
                                        "display": cfg["display"]})
                     else:
