@@ -4,6 +4,9 @@ frontend/dist/
 backend/__pycache__/
 *.pyc
 
+# 运行时观察日志（拥挤度 jsonl 等）
+backend/logs/
+
 # 系统/编辑器
 .DS_Store
 Thumbs.db
