@@ -38,7 +38,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { fetchSectorTrend, fetchStockQuotes, fetchEtfFlow } from '../api.js'
 import { fmtYi, fmtPct, upDownClass } from '../format.js'
 import StockChart from './StockChart.vue'
