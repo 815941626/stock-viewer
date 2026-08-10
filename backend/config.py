@@ -188,6 +188,17 @@ CONGESTION = {
 # 拥挤度观察日志目录（每日一个 jsonl，复盘"位置标了之后板块怎么走"）
 CONGESTION_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 
+# 筹码结构四象限参数（主力 vs 小单背离，2026-08-10 设计定稿，见 未来计划.md 第5节）
+# 全部走净占比空间：main_pct=f184，small_pct=f84/f6*100
+# 迟滞带：进入用 enter，维持用 exit——5 秒轮询下防止标签在阈值边上抖动
+CHIPFLOW = {
+    "enter_x": 1.5,     # 主力净占比进入阈值（%）
+    "enter_y": 1.5,     # 小单净占比进入阈值（%）
+    "exit_x": 1.0,      # 维持阈值（低于进入值，形成迟滞带）
+    "exit_y": 1.0,
+    "warmup_min": 15,   # 开盘前 N 分钟不定象限（比值极端噪声大）
+}
+
 # 轮询间隔（秒），规格要求每 5 秒刷新一次
 POLL_INTERVAL = 5
 

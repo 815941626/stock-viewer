@@ -19,6 +19,7 @@
           <th>v15长期(亿/分)</th>
           <th>净流入(亿)</th>
           <th>拥挤度</th>
+          <th>筹码</th>
         </tr>
       </thead>
       <tbody>
@@ -41,6 +42,10 @@
           <td :class="upDownClass(s.main_net_inflow)">{{ fmtYi(s.main_net_inflow) }}</td>
           <td>
             <span class="chip" :class="congClass(s)" :title="congTip(s)">{{ congText(s) }}</span>
+          </td>
+          <td>
+            <span v-if="chipLabel(s)" class="cf" :class="chipClass(s)" :title="chipTip(s)">{{ chipLabel(s) }}</span>
+            <span v-else class="cf-none">-</span>
           </td>
         </tr>
       </tbody>
@@ -99,6 +104,26 @@ const congTip = s => {
     `小单净占比 ${c.small_net_pct == null ? '-' : c.small_net_pct.toFixed(2) + '%'} · ` +
     `上涨占比 ${c.breadth_pct == null ? '-' : c.breadth_pct + '%'}`
 }
+
+// 筹码结构四象限（主力 vs 小单背离）：派发=主力出货散户接盘，吸筹=主力买散户卖
+const FLOW_STYLE = {
+  '派发': 'cf-dist',
+  '吸筹': 'cf-abs',
+  '共振涌入': 'cf-surge',
+  '双逃': 'cf-panic',
+  '早盘': 'cf-early',
+}
+const chip = s => s.flow_pattern || {}
+const chipLabel = s => chip(s).pattern || ''
+const chipClass = s => FLOW_STYLE[chip(s).pattern] || 'cf-none'
+const chipTip = s => {
+  const f = chip(s)
+  if (!f.pattern) return '中性：主力/小单净占比均在阈值内'
+  let t = `${f.pattern}｜主力净占比 ${f.main_pct}% · 小单净占比 ${f.small_pct}%`
+  if (f.absorption != null) t += `\n接盘强度 ${f.absorption}（散户接走主力抛盘的比例）`
+  if (f.accumulate != null) t += `\n吸筹强度 ${f.accumulate}`
+  return t
+}
 </script>
 
 <style scoped>
@@ -134,4 +159,15 @@ tbody tr.dead td { color: #5a627e; }
 .c-mid { color: #f5b041; border-color: rgba(245, 176, 65, 0.45); }
 .c-high { color: #ff4d4f; border-color: rgba(255, 77, 79, 0.5); }
 .c-none { color: #5a627e; }
+/* 筹码结构徽标 */
+.cf {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  font-size: 12px; border: 1px solid transparent; cursor: help;
+}
+.cf-dist { color: #ff4d4f; border-color: rgba(255, 77, 79, 0.5); background: rgba(255, 77, 79, 0.08); }
+.cf-abs { color: #00b578; border-color: rgba(0, 181, 120, 0.45); background: rgba(0, 181, 120, 0.08); }
+.cf-surge { color: #f5b041; border-color: rgba(245, 176, 65, 0.45); }
+.cf-panic { color: #7b84a3; border-color: #3a4260; }
+.cf-early { color: #5a627e; }
+.cf-none { color: #5a627e; }
 </style>

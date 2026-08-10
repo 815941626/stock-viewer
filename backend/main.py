@@ -33,11 +33,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import (CONGESTION, CONGESTION_LOG_DIR, MOMENTUM, POOL,
+from config import (CHIPFLOW, CONGESTION, CONGESTION_LOG_DIR, MOMENTUM, POOL,
                     POOL_CACHE_FILE, POLL_INTERVAL, SECTORS, TREND_CACHE_TTL)
 from fetcher import (fetch_sector_flow, fetch_sector_flow_history,
                      fetch_sector_trend, fetch_stock_quotes)
 from congestion import compute_congestion
+from chipflow import flow_pattern
 from momentum import compute_momentum, in_trading_session, slope_per_min
 
 # 内存缓存：所有对东财的请求都收敛到这里，前端只读缓存
@@ -55,6 +56,9 @@ _histories = {}
 
 # 拥挤度 V2：小单净占比（占成交额%）历史缓冲，算散户涌入斜率用
 _small_histories = {}
+
+# 筹码结构四象限：各板块最新判定（迟滞状态随轮询推进，见 _advance_flow_state）
+_flow_patterns = {}
 
 # 观察日志节流
 _last_cong_log = 0.0
@@ -116,6 +120,17 @@ def _append_history(sectors):
                 sbuf.append((now, ratio))
 
 
+def _advance_flow_state(sectors):
+    """每次成功拉取后推进筹码结构象限状态（迟滞带需要逐轮状态）。
+    放在轮询循环而非 get_sectors：状态应随数据更新推进而不是随前端请求数，
+    观察日志也能读到同一份状态。"""
+    for s in sectors:
+        prev = (_flow_patterns.get(s["code"]) or {}).get("pattern")
+        _flow_patterns[s["code"]] = flow_pattern(
+            s.get("main_net_inflow"), s.get("small_net_inflow"),
+            s.get("amount"), s.get("main_net_pct"), prev, CHIPFLOW)
+
+
 def _maybe_log_congestion(sectors):
     """观察日志：每 log_interval 秒为每个板块写一行 jsonl，
     复盘用——"位置标了 70% 的板块，T+1/T+3 是不是真退了"。
@@ -137,10 +152,13 @@ def _maybe_log_congestion(sectors):
                                           s.get("down_count"), s.get("chg_60d"),
                                           s.get("chg_ytd"), CONGESTION)
                 m = mom.get(s["code"]) or {}
+                fp = _flow_patterns.get(s["code"]) or {}
                 f.write(json.dumps({
                     "ts": int(now), "code": s["code"], "name": s.get("display"),
                     "position": cong["position"], "parts": cong["parts"],
                     "small_pct": None if ratio is None else round(ratio, 3),
+                    "main_pct": s.get("main_net_pct"),
+                    "flow": fp.get("pattern"), "absorption": fp.get("absorption"),
                     "v5": m.get("v5"), "score": m.get("score"),
                     "chg": s.get("change_pct"),
                 }, ensure_ascii=False) + "\n")
@@ -158,6 +176,7 @@ async def _do_refresh():
         _cache["ok"] = True
         _cache["last_error"] = None
         _append_history(sectors)
+        _advance_flow_state(sectors)
         _maybe_log_congestion(sectors)
     except Exception as err:  # 网络/限流/解析失败：保留旧数据，记录状态
         _cache["ok"] = False
@@ -268,6 +287,7 @@ def get_sectors():
             list(_small_histories.get(s["code"]) or []),
             CONGESTION["small_slope_window_min"])
         item["congestion"] = cong
+        item["flow_pattern"] = _flow_patterns.get(s["code"])
         items.append(item)
 
     def _score(it):

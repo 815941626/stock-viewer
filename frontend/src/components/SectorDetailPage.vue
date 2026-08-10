@@ -15,6 +15,9 @@
         <span v-if="congPos != null" class="chip" :class="congClass" :title="congTip">
           拥挤 {{ congPos }}%
         </span>
+        <span v-if="flowLabel" class="chip" :class="flowClass" :title="flowTip">
+          {{ flowLabel }}<template v-if="flowStrength != null"> · 强度 {{ flowStrength }}</template>
+        </span>
       </div>
     </header>
 
@@ -56,6 +59,24 @@ const congTip = computed(() => {
   const c = props.sector.congestion || {}
   const p = c.parts || {}
   return `拥挤位置 ${c.position}%（小单 ${p.small ?? '-'} / 铺开 ${p.breadth ?? '-'} / 抬高 ${p.extension ?? '-'})`
+})
+
+// 筹码结构四象限
+const flow = computed(() => props.sector.flow_pattern || {})
+const flowLabel = computed(() => flow.value.pattern || '')
+const flowClass = computed(() => ({
+  '派发': 'c-dist',
+  '吸筹': 'c-abs',
+  '共振涌入': 'c-mid',
+}[flow.value.pattern] || 'c-none'))
+const flowStrength = computed(() => flow.value.absorption ?? flow.value.accumulate ?? null)
+const flowTip = computed(() => {
+  const f = flow.value
+  if (!f.pattern) return ''
+  let t = `${f.pattern}｜主力净占比 ${f.main_pct}% · 小单净占比 ${f.small_pct}%`
+  if (f.absorption != null) t += '\n接盘强度：散户接走主力抛盘的比例'
+  if (f.accumulate != null) t += '\n吸筹强度：主力吸纳散户抛盘的比例'
+  return t
 })
 
 const TREND_POLL_MS = 30000
@@ -141,6 +162,9 @@ const fmtSlope = v => (v == null ? '-' : (v >= 0 ? '+' : '') + v.toFixed(2))
 .c-low { color: #00b578; border-color: rgba(0, 181, 120, 0.45); }
 .c-mid { color: #f5b041; border-color: rgba(245, 176, 65, 0.45); }
 .c-high { color: #ff4d4f; border-color: rgba(255, 77, 79, 0.5); }
+.c-dist { color: #ff4d4f; border-color: rgba(255, 77, 79, 0.5); background: rgba(255, 77, 79, 0.08); }
+.c-abs { color: #00b578; border-color: rgba(0, 181, 120, 0.45); background: rgba(0, 181, 120, 0.08); }
+.c-none { color: #5a627e; }
 .panel {
   max-width: 1200px; margin: 0 auto 16px;
   background: rgba(255, 255, 255, 0.03);
