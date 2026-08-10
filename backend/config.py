@@ -197,6 +197,16 @@ CONGESTION_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "l
 # ts + 全池板块×全字段，gzip 按天滚动，盘外不写（冻结值无积累价值）
 SNAPSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshots")
 
+# 板块 → ETF 代理映射：把超大单资金流里的 ETF 申赎被动盘拆出来（2026-08-11）
+# 原理：实物申赎的篮子买卖计入成分股超大单；每日收盘快照 ETF 份额
+# （份额 = 行情市值 f20 ÷ 价格 f2），Δ份额×价格 ≈ ETF 驱动的篮子买卖额
+# 新增板块映射直接加行，收盘后自动开始积累
+ETF_PROXIES = {
+    "BK0917": ["512480", "159995", "512760", "588200",
+               "159801", "516350", "588290", "159813"],  # 半导体概念
+}
+ETF_SHARES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "etf_shares.json")
+
 # 筹码结构四象限参数（主力 vs 小单背离，2026-08-10 设计定稿，见 未来计划.md 第5节）
 # 全部走净占比空间：main_pct=f184，small_pct=f84/f6*100
 # 迟滞带：进入用 enter，维持用 exit——5 秒轮询下防止标签在阈值边上抖动

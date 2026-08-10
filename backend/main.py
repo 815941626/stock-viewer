@@ -33,13 +33,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import (CHIPFLOW, CONGESTION, CONGESTION_LOG_DIR, MOMENTUM, POOL,
+from config import (CHIPFLOW, CONGESTION, CONGESTION_LOG_DIR, ETF_PROXIES,
+                    ETF_SHARES_FILE, MOMENTUM, POOL,
                     POOL_CACHE_FILE, POLL_INTERVAL, SECTORS, SNAPSHOT_DIR,
                     TREND_CACHE_TTL)
-from fetcher import (fetch_sector_flow, fetch_sector_flow_history,
-                     fetch_sector_trend, fetch_stock_quotes)
+from fetcher import (fetch_etf_quotes, fetch_sector_flow,
+                     fetch_sector_flow_history, fetch_sector_trend,
+                     fetch_stock_quotes)
 from congestion import compute_congestion
 from chipflow import flow_pattern
+from etfflow import compute_etf_flow, record_daily_shares
 from momentum import compute_momentum, in_trading_session, slope_per_min
 from snapshot import SnapshotWriter, build_record
 
@@ -224,6 +227,11 @@ async def _do_refresh():
         _advance_flow_state(sectors)
         _maybe_write_snapshot(sectors)
         _maybe_log_congestion(sectors)
+        try:
+            if record_daily_shares(ETF_SHARES_FILE, fetch_etf_quotes, ETF_PROXIES):
+                print("[etf-shares] 当日 ETF 份额快照完成")
+        except Exception as err:
+            print(f"[etf-shares] 快照失败: {err}")
     except Exception as err:  # 网络/限流/解析失败：保留旧数据，记录状态
         _cache["ok"] = False
         _cache["last_error"] = str(err)
@@ -389,6 +397,18 @@ def get_stock_quotes(codes: str):
         _quote_cache.pop(oldest, None)
     _quote_cache[key] = {"ts": now, "stocks": stocks}
     return {"ok": True, "stocks": stocks}
+
+
+# ------------------------------------------------------------------
+# ETF 申赎拆解（超大单资金流的被动盘分离）
+# ------------------------------------------------------------------
+
+@app.get("/api/etf_flow")
+def get_etf_flow(code: str):
+    """板块代理 ETF 的申赎金额拆解（Δ份额×价格，创建为正/赎回为负）。
+    事后口径：份额在每个交易日 15:05 后快照，返回的是最近两个交易日的变化。
+    用于把超大单资金流里的 ETF 被动盘分离出来（估算误差约 ±20-30%）。"""
+    return compute_etf_flow(ETF_SHARES_FILE, code, ETF_PROXIES)
 
 
 # ------------------------------------------------------------------

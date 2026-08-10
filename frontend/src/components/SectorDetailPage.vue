@@ -21,6 +21,12 @@
       </div>
     </header>
 
+    <p v-if="etfFlow" class="etf-line" :title="etfTip">
+      ETF申赎 ≈
+      <span :class="etfFlow.total_flow >= 0 ? 'up' : 'down'">{{ etfFlowText }}</span>
+      <span class="dim">（{{ etfFlow.etfs.length }} 只ETF · {{ etfDates }} · 被动盘拆解·事后口径）</span>
+    </p>
+
     <section class="pg-chart panel">
       <StockChart :trend="trend" :loading="trendLoading" :error="trendErr" />
     </section>
@@ -33,7 +39,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { fetchSectorTrend, fetchStockQuotes } from '../api.js'
+import { fetchSectorTrend, fetchStockQuotes, fetchEtfFlow } from '../api.js'
 import { fmtYi, fmtPct, upDownClass } from '../format.js'
 import StockChart from './StockChart.vue'
 import StockTable from './StockTable.vue'
@@ -77,6 +83,36 @@ const flowTip = computed(() => {
   if (f.absorption != null) t += '\n接盘强度：散户接走主力抛盘的比例'
   if (f.accumulate != null) t += '\n吸筹强度：主力吸纳散户抛盘的比例'
   return t
+})
+
+// ETF 申赎拆解（事后口径，切换板块时拉一次即可——日频数据）
+const etfFlow = ref(null)
+async function loadEtfFlow() {
+  etfFlow.value = null
+  if (!props.sector) return
+  try {
+    const json = await fetchEtfFlow(props.sector.code)
+    if (json.ok) etfFlow.value = json
+  } catch (e) { /* 无代理映射或数据不足：静默不显示 */ }
+}
+watch(() => props.sector?.code, loadEtfFlow, { immediate: true })
+
+const etfFlowText = computed(() => {
+  const v = etfFlow.value?.total_flow
+  if (v == null) return ''
+  return (v >= 0 ? '+' : '') + (v / 1e8).toFixed(1) + '亿'
+})
+const etfDates = computed(() => {
+  const d = etfFlow.value?.dates
+  if (!d) return ''
+  return `${d[0].slice(4, 6)}/${d[0].slice(6)}→${d[1].slice(4, 6)}/${d[1].slice(6)}`
+})
+const etfTip = computed(() => {
+  if (!etfFlow.value) return ''
+  return etfFlow.value.etfs.map(e =>
+    `${e.name}：份额 ${(e.d_shares / 1e8).toFixed(1)} 亿份变化 → ` +
+    `${(e.flow / 1e8) >= 0 ? '+' : ''}${(e.flow / 1e8).toFixed(1)} 亿`
+  ).join('\n')
 })
 
 const TREND_POLL_MS = 30000
@@ -165,6 +201,10 @@ const fmtSlope = v => (v == null ? '-' : (v >= 0 ? '+' : '') + v.toFixed(2))
 .c-dist { color: #ff4d4f; border-color: rgba(255, 77, 79, 0.5); background: rgba(255, 77, 79, 0.08); }
 .c-abs { color: #00b578; border-color: rgba(0, 181, 120, 0.45); background: rgba(0, 181, 120, 0.08); }
 .c-none { color: #5a627e; }
+.etf-line { margin: 0; font-size: 12px; color: #a8b2cf; }
+.etf-line .dim { color: #5a627e; margin-left: 6px; }
+.up { color: #ff4d4f; }
+.down { color: #00b578; }
 .panel {
   max-width: 1200px; margin: 0 auto 16px;
   background: rgba(255, 255, 255, 0.03);

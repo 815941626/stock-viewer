@@ -39,3 +39,11 @@ export async function fetchStockQuotes(codes) {
   if (!json.stocks) throw new Error(json.last_error || '拉取个股行情失败')
   return json
 }
+
+/**
+ * ETF 申赎拆解（事后口径，Δ份额×价格）。
+ * ok=false 时 message 说明原因（未配置代理 / 快照积累中），不抛错。
+ */
+export async function fetchEtfFlow(code) {
+  return await getJson('/api/etf_flow?code=' + encodeURIComponent(code))
+}

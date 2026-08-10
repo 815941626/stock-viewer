@@ -10,6 +10,9 @@ backend/logs/
 # 全量快照档案（gzip，体积大，不进版本库）
 backend/snapshots/
 
+# ETF 份额快照（运行时数据，自行积累）
+backend/etf_shares.json
+
 # 系统/编辑器
 .DS_Store
 Thumbs.db

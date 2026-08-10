@@ -373,6 +373,56 @@ def fetch_stock_boards(code, retries=2):
     raise RuntimeError(f"F10 反推概念板块失败（{code}）: {last_err}")
 
 
+def _fund_secid(code):
+    """ETF 代码 -> ulist secid（5xx 沪市 1.，1xx 深市 0.）"""
+    return ("1." if code.startswith("5") else "0.") + code
+
+
+def fetch_etf_quotes(codes, retries=2):
+    """
+    ETF 实时行情：价格 + 总市值。份额 = f20 ÷ f2（已实测 2026-08-11）。
+    返回与传入顺序对齐的列表：[{code, name, price, mcap, shares}]，
+    缺失项占位（shares=None）。
+    """
+    params = {
+        "fltt": 2,
+        "invt": 2,
+        "np": 1,
+        "fields": "f2,f3,f12,f14,f20",
+        "secids": ",".join(_fund_secid(c) for c in codes),
+        "ut": "b2884a393a59ad64002292a3e90d46a5",
+    }
+    last_err = None
+    for host in API_HOSTS:
+        for attempt in range(1, retries + 1):
+            try:
+                resp = _SESSION.get(host + ULIST_PATH, params=params,
+                                    headers=HEADERS, timeout=10)
+                resp.raise_for_status()
+                diff = (resp.json().get("data") or {}).get("diff") or []
+                if not diff:
+                    raise RuntimeError("ETF 行情返回空数据")
+                by_code = {it.get("f12"): it for it in diff}
+                result = []
+                for c in codes:
+                    it = by_code.get(c)
+                    price = _to_float(it.get("f2")) if it else None
+                    mcap = _to_float(it.get("f20")) if it else None
+                    result.append({
+                        "code": c,
+                        "name": it.get("f14") if it else None,
+                        "price": price,
+                        "mcap": mcap,
+                        "shares": (mcap / price) if (price and mcap) else None,
+                    })
+                return result
+            except Exception as err:
+                last_err = err
+                if attempt < retries:
+                    time.sleep(1)
+    raise RuntimeError(f"拉取 ETF 行情失败（所有主机均不可用）: {last_err}")
+
+
 def _fmt_yi(value):
     """「元」转「亿元」显示，None 显示 -"""
     return "-" if value is None else f"{value / 1e8:.2f}"
