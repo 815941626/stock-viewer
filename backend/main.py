@@ -67,6 +67,21 @@ _last_cong_log = 0.0
 _pool_sectors = []
 
 
+def _pool_members(sector_cfg):
+    """板块的成分龙头股代码（按 F10 代表性 rank 升序）。
+    过滤 rank > member_max_rank 的边缘成员（如比亚迪挂光伏概念 rank 37）；
+    若全被滤空则保留代表性最高的一个，避免空表。兼容旧格式（纯代码列表）。"""
+    raw = sector_cfg.get("members") or []
+    if raw and isinstance(raw[0], str):  # 旧格式
+        return raw
+    ranked = sorted(raw, key=lambda m: m.get("rank") or 99)
+    kept = [m["code"] for m in ranked
+            if (m.get("rank") or 99) <= POOL["member_max_rank"]]
+    if not kept and ranked:
+        kept = [ranked[0]["code"]]
+    return kept
+
+
 def _load_pool():
     """读 pool.json 转成 SECTORS 同形状 [{code, display, em_name}]。
     池子的"选哪些板块"逻辑全在这里——接口形状方向无关，前端零改动。"""
@@ -75,7 +90,7 @@ def _load_pool():
         with open(POOL_CACHE_FILE, encoding="utf-8") as f:
             pool = json.load(f)
         sectors = [{"code": s["code"], "display": s["name"], "em_name": s["name"],
-                    "members": s.get("members") or []}
+                    "members": _pool_members(s)}
                    for s in pool.get("sectors") or []]
         if sectors:
             _pool_sectors = sectors

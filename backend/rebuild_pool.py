@@ -44,12 +44,14 @@ def main():
     if failed:
         print(f"!! 以下股票未取到概念（缺席）: {failed}")
 
-    # 聚合：概念 -> {名称, 成员, rank 和}
+    # 聚合：概念 -> {名称, 成员(带 BOARD_RANK), rank 和}
+    # members 保留 rank：main 加载时按 POOL.member_max_rank 过滤边缘成员
+    # （BYD/国电南瑞挂在光伏概念 rank 35-37 的教训：只看"有没有"会混入边缘业务）
     agg = {}
     for code, boards in boards_of.items():
         for b in boards:
             e = agg.setdefault(b["code"], {"name": b["name"], "members": [], "rank_sum": 0})
-            e["members"].append(code)
+            e["members"].append({"code": code, "rank": b["rank"]})
             e["rank_sum"] += b["rank"]
 
     exclude = set(POOL["exclude"])
@@ -59,7 +61,8 @@ def main():
     for code, e in agg.items():
         freq = len(e["members"])
         item = {"code": code, "name": e["name"], "freq": freq,
-                "rank_sum": e["rank_sum"], "members": sorted(e["members"])}
+                "rank_sum": e["rank_sum"],
+                "members": sorted(e["members"], key=lambda m: m["rank"])}
         if code in exclude:
             continue
         if code in extra or POOL["min_freq"] <= freq <= POOL["max_freq"]:
@@ -89,7 +92,8 @@ def main():
 
     print(f"\n== 池子已写入 {POOL_CACHE_FILE}：入选 {len(selected)} 板块 ==")
     for s in selected:
-        shown = "/".join(s["members"][:5]) + ("..." if len(s["members"]) > 5 else "")
+        shown = "/".join(m["code"] for m in s["members"][:5]) + \
+                ("..." if len(s["members"]) > 5 else "")
         print(f"  {s['code']} {s['name']:<14} freq={s['freq']}  {shown}")
     bucket_str = ", ".join(f"{b['name']}({b['freq']})" for b in pool["excluded_buckets"])
     print(f"\n被滤的大箩筐(freq>{POOL['max_freq']}): {bucket_str or '(无)'}")
