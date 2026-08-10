@@ -131,6 +131,21 @@ breadth_pct, extension_base, small_slope}`；前端看板拥挤度列（替换�
 - **待做**：P2 日内结构翻转检测（v5 转负 + s5 上升，持续窗确认）；
   P3 个股级筹码（stock_quotes 补 f84）
 
+## 全量快照落盘（已实现 2026-08-10）
+
+回测数据积累：盘中每次成功轮询写一行全字段快照（行情+动量+拥挤+筹码），
+盘外冻结值不入库（in_trading_session 闸）。越早积累越值钱，不许中途断档。
+
+- **位置**：`backend/snapshots/snapshots_YYYYMMDD.jsonl.gz`（gzip 按天滚动，
+  append 模式跨重启续写；每文件首行 schema 行自描述字段顺序）
+- **记录**：`{"ts": epoch, "s": [[22 字段数组]×40 板块]}`，字段顺序见
+  `snapshot.py FIELDS`（行情10 + 动量5 + 拥挤4 + 筹码3）
+- **口径**：快照内拥挤度按进入阈值无状态计算（可复现）；看板展示的带迟滞
+  标签另走 `_flow_patterns`，差异是设计如此
+- **工具**：`python backend/read_snapshots.py [日期] [--tail N|--dict i]`；
+  `/` 端点返回 `snapshots_today` 计数（盘中验证用）
+- **体量预估**：gzip 后约 2-4 MB/交易日
+
 ## 板块详情页（已实现 2026-08-09）
 
 点击柱子/看板行 → 全屏 SectorDetailPage：动量状态（score/v5/v15/加减速）+

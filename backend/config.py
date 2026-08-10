@@ -193,6 +193,10 @@ CONGESTION = {
 # 拥挤度观察日志目录（每日一个 jsonl，复盘"位置标了之后板块怎么走"）
 CONGESTION_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 
+# 全量快照落盘（回测数据积累）：盘中每次成功轮询写一行
+# ts + 全池板块×全字段，gzip 按天滚动，盘外不写（冻结值无积累价值）
+SNAPSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshots")
+
 # 筹码结构四象限参数（主力 vs 小单背离，2026-08-10 设计定稿，见 未来计划.md 第5节）
 # 全部走净占比空间：main_pct=f184，small_pct=f84/f6*100
 # 迟滞带：进入用 enter，维持用 exit——5 秒轮询下防止标签在阈值边上抖动

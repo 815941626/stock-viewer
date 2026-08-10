@@ -34,12 +34,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import (CHIPFLOW, CONGESTION, CONGESTION_LOG_DIR, MOMENTUM, POOL,
-                    POOL_CACHE_FILE, POLL_INTERVAL, SECTORS, TREND_CACHE_TTL)
+                    POOL_CACHE_FILE, POLL_INTERVAL, SECTORS, SNAPSHOT_DIR,
+                    TREND_CACHE_TTL)
 from fetcher import (fetch_sector_flow, fetch_sector_flow_history,
                      fetch_sector_trend, fetch_stock_quotes)
 from congestion import compute_congestion
 from chipflow import flow_pattern
 from momentum import compute_momentum, in_trading_session, slope_per_min
+from snapshot import SnapshotWriter, build_record
 
 # 内存缓存：所有对东财的请求都收敛到这里，前端只读缓存
 _cache = {
@@ -59,6 +61,9 @@ _small_histories = {}
 
 # 筹码结构四象限：各板块最新判定（迟滞状态随轮询推进，见 _advance_flow_state）
 _flow_patterns = {}
+
+# 全量快照写入器（回测数据积累，盘中每 5 秒一行，gzip 按天滚动）
+_snapshot_writer = SnapshotWriter(SNAPSHOT_DIR)
 
 # 观察日志节流
 _last_cong_log = 0.0
@@ -146,6 +151,31 @@ def _advance_flow_state(sectors):
             s.get("amount"), s.get("main_net_pct"), prev, CHIPFLOW)
 
 
+def _maybe_write_snapshot(sectors):
+    """全量快照落盘（回测数据积累）：只在盘中写，盘外冻结值不入库。
+    拥挤度在此处按进入阈值无状态计算（可复现）；看板的带迟滞标签另走
+    _flow_patterns，两者口径略有差异是设计如此。"""
+    now = time.time()
+    if not in_trading_session(now):
+        return
+    try:
+        mom = compute_momentum(sectors, _histories, MOMENTUM)
+        congestions = {}
+        slopes = {}
+        for s in sectors:
+            code = s["code"]
+            congestions[code] = compute_congestion(
+                s.get("main_net_inflow"), s.get("small_net_inflow"),
+                s.get("amount"), s.get("main_net_pct"), None, CONGESTION, now)
+            slopes[code] = slope_per_min(
+                list(_small_histories.get(code) or []),
+                CONGESTION["small_slope_window_min"])
+        _snapshot_writer.write(
+            build_record(sectors, mom, congestions, _flow_patterns, slopes, now))
+    except Exception as err:
+        print(f"[snapshot] 写入失败: {err}")
+
+
 def _maybe_log_congestion(sectors):
     """观察日志：每 log_interval 秒为每个板块写一行 jsonl，
     复盘用——"位置标了 70% 的板块，T+1/T+3 是不是真退了"。
@@ -192,6 +222,7 @@ async def _do_refresh():
         _cache["last_error"] = None
         _append_history(sectors)
         _advance_flow_state(sectors)
+        _maybe_write_snapshot(sectors)
         _maybe_log_congestion(sectors)
     except Exception as err:  # 网络/限流/解析失败：保留旧数据，记录状态
         _cache["ok"] = False
@@ -241,6 +272,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        _snapshot_writer.close()
         task.cancel()
 
 
@@ -270,13 +302,15 @@ def _public_sector(s):
 
 @app.get("/")
 def root():
-    """服务自检：是否就绪、数据新鲜度。"""
+    """服务自检：是否就绪、数据新鲜度、快照积累。"""
     return {
         "service": "sector-flow-backend",
         "ok": _cache["ok"],
         "updated_at": _cache["updated_at"],
         "poll_interval": POLL_INTERVAL,
         "sector_count": len(_cache["sectors"]),
+        "pool_size": len(_pool_sectors),
+        "snapshots_today": _snapshot_writer.today_count,
     }
 
 

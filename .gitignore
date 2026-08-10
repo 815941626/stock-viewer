@@ -7,6 +7,9 @@ backend/__pycache__/
 # 运行时观察日志（拥挤度 jsonl 等）
 backend/logs/
 
+# 全量快照档案（gzip，体积大，不进版本库）
+backend/snapshots/
+
 # 系统/编辑器
 .DS_Store
 Thumbs.db
